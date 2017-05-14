@@ -20,7 +20,14 @@ namespace MarkMyProfessor.Controllers
         public async Task<IActionResult> FetchData()
         {
             SeedData seeder = new SeedData(_context);
-            await seeder.SeedDataAsync();
+            await seeder.SeedDataWaybackMachineAsync();
+            return RedirectToAction(nameof(HomeController.Index), nameof(HomeController));
+        }
+
+        public async Task<IActionResult> FetchGoogle()
+        {
+            SeedData seeder = new SeedData(_context);
+            await seeder.SeedDataGoogleCacheAsync();
             return RedirectToAction(nameof(HomeController.Index), nameof(HomeController));
         }
     }

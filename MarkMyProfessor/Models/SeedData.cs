@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
@@ -24,7 +25,7 @@ namespace MarkMyProfessor.Models
 
         private readonly HttpClient _browser = new HttpClient();
 
-        public async Task SeedDataAsync()
+        public async Task SeedDataWaybackMachineAsync()
         {
             string waybackJsonString =
                 await _browser.GetStringAsync(
@@ -40,6 +41,17 @@ namespace MarkMyProfessor.Models
             }
         }
 
+        public async Task SeedDataGoogleCacheAsync()
+        {
+            Random r = new Random();
+            for (int row = 1982527; row < 1993000; row++)
+            {
+                await ParsePageAsync(
+                    $"http://webcache.googleusercontent.com/search?q=cache:www.markmyprofessor.com/tanar/adatlap/{row}.html");
+                await Task.Delay((int)(20000 * r.NextDouble()));
+            }
+        }
+
         private async Task ParsePageAsync(string uri)
         {
 
@@ -51,8 +63,9 @@ namespace MarkMyProfessor.Models
                 bool insertProf = false;
                 bool insertSchool = false;
 
-                string lastSegment = uri.Split('/').Last() + "."; // append dot for the rare case the uri does not end with .html
-                int profId =  Convert.ToInt32(lastSegment.Substring(0, lastSegment.IndexOf('.')));
+                string lastSegment = uri.Split('/').Last() + ".";
+                    // append dot for the rare case the uri does not end with .html
+                int profId = Convert.ToInt32(lastSegment.Substring(0, lastSegment.IndexOf('.')));
 
                 Professor prof = await
                     _context.Professors
@@ -65,24 +78,28 @@ namespace MarkMyProfessor.Models
                     prof = new Professor {ProfessorId = profId};
                     insertProf = true;
                 }
-                
+
                 HtmlDocument doc = new HtmlDocument();
-                try
+                HttpResponseMessage result = await _browser.GetAsync(uri);
+                if (!result.IsSuccessStatusCode && result.StatusCode != HttpStatusCode.NotFound)
                 {
-                    doc.LoadHtml(await _browser.GetStringAsync(uri));
+                    // try again after a while
+                    await Task.Delay(50000);
+                    result = await _browser.GetAsync(uri);
                 }
-                catch (Exception x)
-                {
-                    // we can try this again after a delay, to filter out some 504s for example
-                    await Task.Delay(5000);
-                    doc.LoadHtml(await _browser.GetStringAsync(uri)); // this might throw again, sh*t happens, that'll get caught by the outter catch
-                }
-                
+                if (result.StatusCode == HttpStatusCode.ServiceUnavailable)
+                    throw new HttpRequestException("Chaptad");
+
+                doc.LoadHtml(await result.Content.ReadAsStringAsync());
+                    // this might throw, sh*t happens, that'll get caught by the outter catch
+
 
                 // ignore empty ones
                 HtmlNode overall = doc.QuerySelector(".main.professor .big-font7");
                 if (overall == null
-                    || !Decimal.TryParse(overall.InnerText.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal totalScore)
+                    ||
+                    !Decimal.TryParse(overall.InnerText.Trim(), NumberStyles.AllowDecimalPoint,
+                        CultureInfo.InvariantCulture, out decimal totalScore)
                     || totalScore == Decimal.Zero)
                     return;
 
@@ -111,17 +128,27 @@ namespace MarkMyProfessor.Models
                     profSchoolId;
 
                 HtmlNode table = rateHolder.QuerySelector("table");
-                prof.MigratedRateAchievable = Convert.ToDecimal(table.QuerySelector("tr:nth-child(1) td:nth-child(2)").InnerText.Trim(), CultureInfo.InvariantCulture);
-                prof.MigratedRateUseful = Convert.ToDecimal(table.QuerySelector("tr:nth-child(2) td:nth-child(2)").InnerText.Trim(), CultureInfo.InvariantCulture);
-                prof.MigratedRateHelpful = Convert.ToDecimal(table.QuerySelector("tr:nth-child(3) td:nth-child(2)").InnerText.Trim(), CultureInfo.InvariantCulture);
-                prof.MigratedRatePrepared = Convert.ToDecimal(table.QuerySelector("tr:nth-child(4) td:nth-child(2)").InnerText.Trim(), CultureInfo.InvariantCulture);
-                prof.MigratedRateStyle = Convert.ToDecimal(table.QuerySelector("tr:nth-child(5) td:nth-child(2)").InnerText.Trim(), CultureInfo.InvariantCulture);
+                prof.MigratedRateAchievable =
+                    Convert.ToDecimal(table.QuerySelector("tr:nth-child(1) td:nth-child(2)").InnerText.Trim(),
+                        CultureInfo.InvariantCulture);
+                prof.MigratedRateUseful =
+                    Convert.ToDecimal(table.QuerySelector("tr:nth-child(2) td:nth-child(2)").InnerText.Trim(),
+                        CultureInfo.InvariantCulture);
+                prof.MigratedRateHelpful =
+                    Convert.ToDecimal(table.QuerySelector("tr:nth-child(3) td:nth-child(2)").InnerText.Trim(),
+                        CultureInfo.InvariantCulture);
+                prof.MigratedRatePrepared =
+                    Convert.ToDecimal(table.QuerySelector("tr:nth-child(4) td:nth-child(2)").InnerText.Trim(),
+                        CultureInfo.InvariantCulture);
+                prof.MigratedRateStyle =
+                    Convert.ToDecimal(table.QuerySelector("tr:nth-child(5) td:nth-child(2)").InnerText.Trim(),
+                        CultureInfo.InvariantCulture);
                 prof.MigratedCourses = rateHolder.QuerySelectorAll(".big-font2").Last().InnerText;
                 prof.MigratedIsSexy = table.QuerySelectorAll("tr:nth-child(6) td:nth-child(2) img").Count > 0;
-                if(prof.Name == null)
+                if (prof.Name == null)
                     Debugger.Break();
 
-                if(insertProf)
+                if (insertProf)
                     _context.Professors.Add(prof);
                 if (insertSchool)
                     _context.Schools.Add(school);
@@ -130,14 +157,18 @@ namespace MarkMyProfessor.Models
 
                 // ratings
                 // 5 tr-s make up a group: empty, values, comment, metadata, empty
-                IList<HtmlNode> rows = doc.QuerySelectorAll(".simpleList dd tbody tr").Where(r => !r.GetAttributeValue("class", "").Contains("responsesTr")).ToList();
-                for (int i = 0; i <= rows.Count - 5; i+=5)
+                IList<HtmlNode> rows =
+                    doc.QuerySelectorAll(".simpleList dd tbody tr")
+                        .Where(r => !r.GetAttributeValue("class", "").Contains("responsesTr"))
+                        .ToList();
+                for (int i = 0; i <= rows.Count - 5; i += 5)
                 {
                     Rating rating = new Rating()
                     {
                         Date =
                             DateTime.ParseExact(
-                                 HtmlEntity.DeEntitize(rows[i + 3].QuerySelectorAll("td")[0].InnerText.Replace("Válaszok", "")).Trim().Substring(0, 16),
+                                HtmlEntity.DeEntitize(rows[i + 3].QuerySelectorAll("td")[0].InnerText.Replace(
+                                    "Válaszok", "")).Trim().Substring(0, 16),
                                 "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
                         Professor = prof,
                         Course = rows[i + 2].QuerySelector("div strong").InnerText.Trim(),
@@ -157,6 +188,14 @@ namespace MarkMyProfessor.Models
 
 
                 await _context.SaveChangesAsync();
+            }
+            catch (HttpRequestException x)
+            {
+                if (x.Message == "Chaptad")
+                {
+
+                    Debugger.Break();
+                }   
             }
             catch (Exception)
             {
