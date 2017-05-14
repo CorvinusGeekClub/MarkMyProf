@@ -2,34 +2,37 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MarkMyProfessor.Models;
+using MarkMyProfessor.ViewModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MarkMyProfessor.Controllers
 {
     public class HomeController : Controller
     {
-        public IActionResult Index()
+        private readonly RatingsContext _context;
+
+        public HomeController(RatingsContext context)
         {
-            return View();
+            _context = context;
         }
 
-        public IActionResult About()
+        public async Task<IActionResult> Index()
         {
-            ViewData["Message"] = "Your application description page.";
-
-            return View();
-        }
-
-        public IActionResult Contact()
-        {
-            ViewData["Message"] = "Your contact page.";
-
-            return View();
-        }
-
-        public IActionResult Error()
-        {
-            return View();
+            IndexViewModel vm = new IndexViewModel();
+            vm.Professors = await _context.Professors.Include(p => p.School)
+                .Select(p => new ProfessorViewModel()
+                {
+                    AchievableRate = p.MigratedRateAchievable,
+                    Name = p.Name,
+                    School =  p.School.ShortName,
+                    StyleRate = p.MigratedRateStyle,
+                    UsefulRate = p.MigratedRateUseful,
+                    HelpfulRate = p.MigratedRateHelpful,
+                    PreparedRate = p.MigratedRatePrepared
+                }).ToListAsync();
+            return View(vm);
         }
     }
 }
