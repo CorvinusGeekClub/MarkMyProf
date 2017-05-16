@@ -42,6 +42,12 @@ namespace MarkMyProfessor
             loggerFactory.AddConsole(Configuration.GetSection("Logging"));
             loggerFactory.AddDebug();
 
+            /*using (var serviceScope = app.ApplicationServices.GetService<IServiceScopeFactory>().CreateScope())
+            {
+                var context = serviceScope.ServiceProvider.GetRequiredService<RatingsContext>();
+                context.Database.Migrate();
+            }*/
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
