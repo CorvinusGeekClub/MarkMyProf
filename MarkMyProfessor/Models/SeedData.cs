@@ -21,9 +21,14 @@ namespace MarkMyProfessor.Models
         public SeedData(RatingsContext context)
         {
             _context = context;
+            _browser = new HttpClient(){ };
+            _browser.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            _browser.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:53.0) Gecko/20100101 Firefox/53.0");
+            _browser.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "hu-HU,hu;q=0.8,en-US;q=0.5,en;q=0.3");
+            _browser.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.google.hu/");
         }
 
-        private readonly HttpClient _browser = new HttpClient();
+        private readonly HttpClient _browser;
 
         public async Task SeedDataWaybackMachineAsync()
         {
@@ -52,7 +57,7 @@ namespace MarkMyProfessor.Models
             }
         }
 
-        private async Task ParsePageAsync(string uri)
+        private async Task<bool> ParsePageAsync(string uri)
         {
 
             System.Diagnostics.Debug.WriteLine(
@@ -101,7 +106,7 @@ namespace MarkMyProfessor.Models
                     !Decimal.TryParse(overall.InnerText.Trim(), NumberStyles.AllowDecimalPoint,
                         CultureInfo.InvariantCulture, out decimal totalScore)
                     || totalScore == Decimal.Zero)
-                    return;
+                    return false;
 
                 var rateHolder = doc.QuerySelector(".rate-holder");
                 prof.Name = rateHolder.QuerySelector(".big-font5").InnerText.Trim();
@@ -188,6 +193,7 @@ namespace MarkMyProfessor.Models
 
 
                 await _context.SaveChangesAsync();
+                return true;
             }
             catch (HttpRequestException x)
             {
@@ -201,6 +207,12 @@ namespace MarkMyProfessor.Models
             {
                 System.Diagnostics.Debug.WriteLine("Error!");
             }
+            return false;
+        }
+
+        public Task<bool> SeedDataFromUrlAsync(string url)
+        {
+            return ParsePageAsync(url);
         }
     }
 }

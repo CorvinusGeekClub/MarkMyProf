@@ -15,7 +15,10 @@ namespace MarkMyProfessor.Controllers
         {
             _context = context;
         }
-
+        public IActionResult Index(bool? success = null)
+        {
+            return View(success);
+        }
         
         public async Task<IActionResult> FetchData()
         {
@@ -29,6 +32,14 @@ namespace MarkMyProfessor.Controllers
             SeedData seeder = new SeedData(_context);
             await seeder.SeedDataGoogleCacheAsync();
             return RedirectToAction(nameof(HomeController.Index), nameof(HomeController));
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> SeedUrl(string url)
+        {
+            SeedData seeder = new SeedData(_context);
+            bool succ = await seeder.SeedDataFromUrlAsync(url);
+            return RedirectToAction(nameof(Index), new {success = succ});
         }
     }
 }
